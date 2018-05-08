@@ -1,3 +1,6 @@
+.firebaserc
+.env
+
 # Logs
 logs
 *.log
