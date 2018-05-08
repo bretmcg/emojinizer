@@ -11,24 +11,33 @@ const languageClient = new Language.LanguageServiceClient();
 const admin = require('firebase-admin');
 admin.initializeApp(); // Firebase RTDB.
 
-exports.smsWebhook = functions.https.onRequest((req, res) => {
+exports.sms = functions.https.onRequest((req, res) => {
   console.log('smsWebhook');
-  console.log('process.env.TWILIO_ACCOUNT_SID', process.env.TWILIO_ACCOUNT_SID);
-  console.log('process.env.TWILIO_AUTH_TOKEN', process.env.TWILIO_AUTH_TOKEN);
   const twilio = require('twilio');
   const twilioClient = new twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
+  console.log(req.body);
+  let body = req.body;
+  let sms = {
+    userNumber: body.From,
+    country: body.FromCountry,
+    city: body.FromCity,
+    twilioNumber: body.To,
+    text: body.Body
+  }
+  let bqTable = body.event || process.env.BQ_TABLE;
+
   twilioClient.messages.create({
-    body: 'Howdy',
-    to: '+19794927261',
-    from: process.env.TWILIO_PHONE_NUMBER
+    body: 'Back atcha: ' + sms.text,
+    to: sms.userNumber,
+    from: sms.twilioNumber
   })
   .then(message => {
-    console.log(message);
+    // console.log(message);
     console.log(message.sid);
-    return admin.database().ref('/messages').push({text: message.sid})
+    return admin.database().ref('/messages').push({text: sms.text})
   }).then(() => {
-    return res.status(200).send('OK');
+    return res.status(200).send('OK/1');
   })
   .catch(err => {
     console.error(err);
