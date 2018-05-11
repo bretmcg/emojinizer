@@ -1,9 +1,23 @@
 const url = new URL(window.location.href);
 const appSettings = {
-  event: url.searchParams.get("event") || 'demo_events',
-  phoneNumber: url.searchParams.get("phone") || '312-313-4664',
+  event: url.searchParams.get("event"),
+  phoneNumber: url.searchParams.get("phone") || '(312) 313-4664',
   twitterHandle: url.searchParams.get("twitter") || '@GoogleCloud'
 }
+
+// If an event wasn't explicitly set in the URL, use the phone number
+// as the event name, in the format +19998887777.
+if (!appSettings.event) {
+  // Remove everything except digits and + (for country code);
+  let ph = appSettings.phoneNumber.replace(/[\D\+]/g,'');
+  // If no country code supplied, prepend +1 (assume US).
+  if (ph.indexOf("+") == -1) {
+    ph = "+1" + ph;
+  }
+  console.log(ph);
+  appSettings.event = ph;
+}
+console.log('Event:', appSettings.event);
 
 var wrapper = document.getElementById('wrapper');
 //var footerHeight = document.getElementById('bannerImg').offsetHeight;
@@ -14,13 +28,14 @@ console.log('maxX', maxX);
 console.log('maxY', maxY);
 
 document.addEventListener('DOMContentLoaded', function() {
+  console.log('DOMContentLoaded');
   var ph = document.querySelector('#phoneNumber');
   ph.innerText = appSettings.phoneNumber;
   document.querySelector('#twitterHandle').innerText = appSettings.twitterHandle;
 });
 
 var db = firebase.database();
-db.ref('sms').child(appSettings.event).on('child_added', snapshot => {
+db.ref('/messages').child(appSettings.event).on('child_added', snapshot => {
   console.log('child added');
   let val = snapshot.val();
   console.log(val);
@@ -35,9 +50,6 @@ db.ref('sms').child(appSettings.event).on('child_added', snapshot => {
     for(let i=0; i<val.tokens.length; i++) {
       let token = val.tokens[i];
       let tag = token.partOfSpeech.tag;
-      // console.log(token);
-      // console.log(tag);
-      // console.log(token.lemma);
       if (tag == 'NOUN' || tag == 'ADJ') {
         words.push(token.lemma);
       }

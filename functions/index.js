@@ -1,57 +1,174 @@
-require('dotenv').config();
+/**
+ * @license
+ * Copyright 2018, Google, Inc.
+ * Licensed under the Apache License, Version 2.0 (the 'License');
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an 'AS IS' BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
-
+ require('dotenv').config();
 const BigQuery = require('@google-cloud/bigquery');
-const bigquery = new BigQuery();
 const Filter = require('bad-words');
 const filter = new Filter();
 const functions = require('firebase-functions');
 const Language = require('@google-cloud/language');
-const languageClient = new Language.LanguageServiceClient();
 const admin = require('firebase-admin');
 admin.initializeApp(); // Firebase RTDB.
 
-exports.sms = functions.https.onRequest((req, res) => {
-  console.log('smsWebhook');
-  const twilio = require('twilio');
-  const twilioClient = new twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
-  console.log(req.body);
+var sms = functions.https.onRequest((req, res) => {
+  const languageClient = new Language.v1.LanguageServiceClient();
+  console.log('smsWebhook');
+
   let body = req.body;
-  let sms = {
+  console.log(body);
+  let msg = {
     userNumber: body.From,
     country: body.FromCountry,
     city: body.FromCity,
     twilioNumber: body.To,
-    text: body.Body
-  }
-  let bqTable = body.event || process.env.BQ_TABLE;
+    text: filter.clean(body.Body),
+    event: body.event || body.To
+  };
+  console.log(`sms: "${msg.text}" sent from ${msg.userNumber}, ${msg.country},${msg.city}, saving to ${msg.event}`);
 
-  twilioClient.messages.create({
-    body: 'Back atcha: ' + sms.text,
-    to: sms.userNumber,
-    from: sms.twilioNumber
-  })
-  .then(message => {
-    // console.log(message);
-    console.log(message.sid);
-    return admin.database().ref('/messages').push({text: sms.text})
-  }).then(() => {
-    return res.status(200).send('OK/1');
-  })
-  .catch(err => {
-    console.error(err);
-    return res.status(500).send('An error has occured.');
+  // msg.text = "'Lawrence of Arabia' is a highly rated film biography about British Lieutenant T. E. Lawrence. Peter O'Toole plays Lawrence in the film.";
+
+  const document = {
+    content: msg.text,
+    type: 'PLAIN_TEXT'
+  };
+  var features = {
+    extractSyntax: true,
+    extractEntities: false,
+    extractDocumentSentiment: true,
+    extractEntitySentiment: false,
+    classifyText: msg.text.split(' ').length > 19,
+  };
+  const request = {
+    document: document,
+    features: features,
+    encodingType: 'UTF8'
+  };
+  return languageClient.annotateText(request)
+    .then(data => {
+      let sentiment = data[0].documentSentiment;
+      msg.score = sentiment.score;
+      msg.magnitude = sentiment.magnitude;
+      msg.tokens = data[0].tokens || {};
+      msg.emoji = getEmoji(sentiment.score);
+      return console.log(`${msg.emoji} - ${msg.text} - ${sentiment.score}`);
+    })
+    .then(() => {
+      let analysis = `Based on your message, you seem ${msg.emoji}`;
+      return sendReplyText(msg.userNumber, msg.twilioNumber, analysis);
+    })
+    .then(() => saveToFirebase(msg))
+    .then(() => saveToBigQuery(msg))
+    .then(() => {
+      return res.status(200).send('Done');
+    })
+    .catch(err => {
+      console.log(new Error(err));
+      return res.status(500).send('An error has occured: ' + err);
+    });
+}); //end sms
+
+
+/**
+ * Returns an emoji (happy/sad/neutral) based on sentiment.
+ * @param {number} score Sentiment score from -1 to 1.
+ * @returns {string} Emoji character.
+ */
+var getEmoji = function (score) {
+  if (score > -0.3 && score < 0.3) {
+    return '😐'; // neutral
+  } else if (score <= -0.3) {
+    return '😔'; // sad
+  }
+
+  return '😄'; // happy
+};
+
+var sendReplyText = function (toNumber, twilioNumber, message) {
+  const twilio = require('twilio');
+  const twilioClient = new twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+  return twilioClient.messages.create({
+      body: message,
+      to: toNumber,
+      from: twilioNumber
+    })
+    .then(message => {
+      return console.log(`Message ${message.sid} sent.`);
+    })
+    .catch(err => {
+      // Swallow this error so we can save to BQ even if the text fails.
+      return console.error(err);
+    });
+};
+
+var saveToBigQuery = function (msgData) {
+  const bigquery = new BigQuery();
+  console.log(`Saving to BigQuery: ${process.env.BQ_DATASET}.${process.env.BQ_TABLE}`);
+  const bqTable = bigquery.dataset(process.env.BQ_DATASET).table(process.env.BQ_TABLE);
+  let row = {
+    message_text: msgData.text,
+    event_name: msgData.event,
+    tokens: JSON.stringify(msgData.tokens),
+    score: (msgData.score).toString(),
+    magnitude: (msgData.magnitude).toString(),
+    from_city: msgData.city,
+    from_country: msgData.country,
+    timestamp: Date.now()
+  };
+  return bqTable.insert(row); // return a Promise.
+};
+
+var saveToFirebase = function (msgData) {
+  return new Promise((resolve) => {
+    console.log('Saving to Firebase for visualizer');
+    console.log(`*** saving to ${msgData.event}`);
+    console.log(JSON.stringify({
+      emoji: msgData.emoji,
+      tokens: msgData.tokens
+    }));
+    // Save to Firebase: write to /sms/tablename
+    admin.database().ref('/messages').child(msgData.event).push({
+      emoji: msgData.emoji,
+      tokens: msgData.tokens
+    }).catch((error) => {
+      // Don't fail the promise on error because we want to continue.
+      console.error(error);
+      resolve();
+    });
+    resolve();
   });
-  // let sms = {
-  //   from: req.body.from,
-  //   text: req.
-  // };
-  // let fromNumber = req.query.From;
-	// let text = req.query.Body;
-	// let fromCountry = req.query.FromCountry;
-	// let fromCity = req.query.FromCity;
-	// let twilioNumber = req.query.To || config.twilio.phoneNumber;
-	// let bqTableName = req.query.bq || config.defaultBqTableName;
-  // response.send("Hello from Firebase!");
-});
+};
+
+exports.sms = sms;
+
+  // twilioClient.messages.create({
+  //   body: 'Back atcha: ' + sms.text,
+  //   to: sms.userNumber,
+  //   from: sms.twilioNumber
+  // })
+  // .then(message => {
+  //   // console.log(message);
+  //   console.log(message.sid);
+  //   return admin.database().ref('/messages').push({text: sms.text})
+  // }).then(() => {
+  //   return res.status(200).send('OK/1');
+  // })
+  // .catch(err => {
+  //   console.error(err);
+  //   return res.status(500).send('An error has occured.');
+  // });
+  
