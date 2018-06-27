@@ -20,6 +20,7 @@ const Filter = require('bad-words');
 const filter = new Filter();
 const functions = require('firebase-functions');
 const Language = require('@google-cloud/language');
+const emojify = require('./lib/emojify');
 const admin = require('firebase-admin');
 admin.initializeApp(); // Firebase RTDB.
 
@@ -38,7 +39,26 @@ var sms = functions.https.onRequest((req, res) => {
     text: filter.clean(body.Body),
     event: body.event || body.To
   };
-  console.log(`sms: "${msg.text}" sent from ${msg.userNumber}, ${msg.country},${msg.city}, saving to ${msg.event}`);
+
+  if (emojify.hasImage(body)) {
+    console.log('Media attached to message, running face emojify.');
+    return emojify.emojify(body)
+      .then((mediaUrl) => {
+        let message = `Here's your emoji-me photo. Giddy up!`;
+        if (!mediaUrl)
+          message = `There was a problem finding faces in your photo.`
+
+        return sendReplyText(msg.userNumber, msg.twilioNumber, message , mediaUrl);
+      })
+      .then(() => {
+        return res.status(200).send('Done');
+      })
+      .catch(e => {
+        console.error(e);
+        return res.status(500).send('An error has occured');
+      });
+  }
+  console.log(`Plain text sms: "${msg.text}" sent from ${msg.userNumber}, ${msg.country},${msg.city}, saving to ${msg.event}`);
 
   // msg.text = "'Lawrence of Arabia' is a highly rated film biography about British Lieutenant T. E. Lawrence. Peter O'Toole plays Lawrence in the film.";
 
@@ -98,13 +118,14 @@ var getEmoji = function (score) {
   return '😄'; // happy
 };
 
-var sendReplyText = function (toNumber, twilioNumber, message) {
+var sendReplyText = function (toNumber, twilioNumber, message, mediaUrl) {
   const twilio = require('twilio');
   const twilioClient = new twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
   return twilioClient.messages.create({
       body: message,
       to: toNumber,
-      from: twilioNumber
+      from: twilioNumber,
+      mediaUrl: mediaUrl
     })
     .then(message => {
       return console.log(`Message ${message.sid} sent.`);
