@@ -25,6 +25,27 @@ const admin = require('firebase-admin');
 admin.initializeApp(); // Firebase RTDB.
 
 
+// Saves a message to the Firebase Realtime Database but sanitizes the text by removing swearwords.
+exports.resetVisualizer = functions.https.onCall((data, context) => {
+  // Message text passed from the client.
+  const eventName = data.eventName;
+  if (!eventName) {
+    console.warn('No event name supplied, exiting');
+    return Promise.resolve({ reset: false, event: 'none' });
+  }
+
+  console.log(`Resetting visualizer for ${eventName}...`);
+  return admin.database().ref('/messages').child(eventName)
+    .set({})
+    .then(() => {
+      return { reset: true, event: eventName };
+    }).catch(err => {
+      console.error(err);
+      return { reset: false, event: eventName, error: err };
+    });
+});
+
+
 var sms = functions.https.onRequest((req, res) => {
   const languageClient = new Language.v1.LanguageServiceClient();
   console.log('smsWebhook');
@@ -45,8 +66,11 @@ var sms = functions.https.onRequest((req, res) => {
     return emojify.emojify(body)
       .then((mediaUrl) => {
         let message = `Here's your emoji-me photo. Giddy up!`;
-        if (!mediaUrl)
+        if (!mediaUrl) {
           message = `There was a problem finding faces in your photo.`
+        } else {
+          saveToFirebase({ imageUrl: mediaUrl }, msg.event);
+        }
 
         return sendReplyText(msg.userNumber, msg.twilioNumber, message , mediaUrl);
       })
@@ -91,7 +115,7 @@ var sms = functions.https.onRequest((req, res) => {
       let analysis = `Based on your message, you seem ${msg.emoji}`;
       return sendReplyText(msg.userNumber, msg.twilioNumber, analysis);
     })
-    .then(() => saveToFirebase(msg))
+    .then(() => saveToFirebase({ emoji: msg.emoji, tokens: msg.tokens }, msg.event))
     .then(() => saveToBigQuery(msg))
     .then(() => {
       return res.status(200).send('Done');
@@ -153,43 +177,22 @@ var saveToBigQuery = function (msgData) {
   return bqTable.insert(row); // return a Promise.
 };
 
-var saveToFirebase = function (msgData) {
+var saveToFirebase = function (payload, eventName) {
   return new Promise((resolve) => {
     console.log('Saving to Firebase for visualizer');
-    console.log(`*** saving to ${msgData.event}`);
-    console.log(JSON.stringify({
-      emoji: msgData.emoji,
-      tokens: msgData.tokens
-    }));
+    console.log(`*** saving to ${eventName}`);
+    console.log(JSON.stringify(payload));
     // Save to Firebase: write to /sms/tablename
-    admin.database().ref('/messages').child(msgData.event).push({
-      emoji: msgData.emoji,
-      tokens: msgData.tokens
-    }).catch((error) => {
-      // Don't fail the promise on error because we want to continue.
-      console.error(error);
-      resolve();
+    admin.database().ref('/messages')
+      .child(eventName)
+      .push(payload)
+      .catch((error) => {
+        // Don't fail the promise on error because we want to continue.
+        console.error(error);
+        resolve();
     });
     resolve();
   });
 };
 
 exports.sms = sms;
-
-  // twilioClient.messages.create({
-  //   body: 'Back atcha: ' + sms.text,
-  //   to: sms.userNumber,
-  //   from: sms.twilioNumber
-  // })
-  // .then(message => {
-  //   // console.log(message);
-  //   console.log(message.sid);
-  //   return admin.database().ref('/messages').push({text: sms.text})
-  // }).then(() => {
-  //   return res.status(200).send('OK/1');
-  // })
-  // .catch(err => {
-  //   console.error(err);
-  //   return res.status(500).send('An error has occured.');
-  // });
-  

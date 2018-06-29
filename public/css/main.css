@@ -18,8 +18,12 @@ body {
 }
 
 #flowchart {
-  width: 100%;
-  margin-top:25px;
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+  display:block;
+  margin-top:15px;
+  align-self: center;
 }
 
 #phoneNumber {
@@ -35,6 +39,7 @@ body {
 }
 
 #twitterHandle {
+  cursor: pointer;
   position: absolute;
   bottom: 15px;
   right: 15px;
@@ -59,6 +64,11 @@ body {
   position: absolute;
   font-size: 13px;
   opacity:0.8;
+}
+
+.emojiMeImage img {
+  max-width: 175px;
+  max-height: 125px;
 }
 
 .emoji {

@@ -1,13 +1,13 @@
 const url = new URL(window.location.href);
 const appSettings = {
-  event: url.searchParams.get("event"),
+  eventName: url.searchParams.get("event"),
   phoneNumber: url.searchParams.get("phone") || '(312) 313-4664',
   twitterHandle: url.searchParams.get("twitter") || '@GoogleCloud'
 }
 
 // If an event wasn't explicitly set in the URL, use the phone number
 // as the event name, in the format +19998887777.
-if (!appSettings.event) {
+if (!appSettings.eventName) {
   // Remove everything except digits and + (for country code);
   let ph = appSettings.phoneNumber.replace(/[\D\+]/g,'');
   // If no country code supplied, prepend +1 (assume US).
@@ -15,9 +15,9 @@ if (!appSettings.event) {
     ph = "+1" + ph;
   }
   console.log(ph);
-  appSettings.event = ph;
+  appSettings.eventName = ph;
 }
-console.log('Event:', appSettings.event);
+console.log('Event name:', appSettings.eventName);
 
 var wrapper = document.getElementById('wrapper');
 //var footerHeight = document.getElementById('bannerImg').offsetHeight;
@@ -29,19 +29,32 @@ console.log('maxY', maxY);
 
 document.addEventListener('DOMContentLoaded', function() {
   console.log('DOMContentLoaded');
+  const resetVisualizer = firebase.functions().httpsCallable('resetVisualizer');
+
   var ph = document.querySelector('#phoneNumber');
   ph.innerText = appSettings.phoneNumber;
   document.querySelector('#twitterHandle').innerText = appSettings.twitterHandle;
+  document.querySelector('#twitterHandle').addEventListener('click', e => {
+    console.log(`Resetting event ${appSettings.eventName}`);
+    resetVisualizer({eventName: appSettings.eventName}).then(function(result) {
+      console.log(result.data);
+      location.reload();
+    }).catch(e => {
+      console.error(e);
+    });;
+  });
 });
 
 var db = firebase.database();
-db.ref('/messages').child(appSettings.event).on('child_added', snapshot => {
+db.ref('/messages').child(appSettings.eventName).on('child_added', snapshot => {
   console.log('child added');
   let val = snapshot.val();
   console.log(val);
-  console.log(val.emoji);
+  if (val.imageUrl) {
+    placeRandomImage(val.imageUrl);
+  }
   if (val.emoji) {
-    placeRandom(val.emoji, 'emoji');
+    placeRandomText(val.emoji, 'emoji');
   }
   if (val.tokens) {
     // Words is a per-message list of nouns and adjectives, co we can
@@ -56,12 +69,30 @@ db.ref('/messages').child(appSettings.event).on('child_added', snapshot => {
     }
     if (words.length) {
       var randomWord = words[Math.floor(Math.random() * words.length)];
-      placeRandom(randomWord, 'word');
+      placeRandomText(randomWord, 'word');
     }
   }
 });
 
-function placeRandom(text, cssClass) {
+function placeRandomImage(url) {
+  let cssClass = 'emojiMeImage';
+  let x = Math.floor(Math.random() * (maxX - 50));
+  let y = Math.floor(Math.random() * (maxY - 35));
+
+  var displayItem = document.createElement('div');
+  var i = document.createElement("img");
+  i.src = url;
+  displayItem.className = 'displayItem';
+  if (cssClass) {
+    displayItem.className += ' ' + cssClass;
+  }
+  displayItem.style.top = y + 'px';
+  displayItem.style.left = x + 'px';
+  displayItem.appendChild(i);
+  wrapper.appendChild(displayItem); 
+}
+
+function placeRandomText(text, cssClass) {
   let x = Math.floor(Math.random() * (maxX - 50));
   let y = Math.floor(Math.random() * (maxY - 35));
 
