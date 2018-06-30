@@ -1,3 +1,0 @@
-const languageify = (body, msg) => {
-  
-};

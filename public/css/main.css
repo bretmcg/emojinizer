@@ -18,23 +18,31 @@ body {
 }
 
 #flowchart {
-  max-width: 400px;
-  margin-left: auto;
-  margin-right: auto;
-  display:block;
+  position: absolute;
+  bottom: 0px;
+  left: 25px;
+  /* right: 0; */
+  /* width: 100%; */
+  text-align: center;
+  /* margin-left: auto;
+  margin-right: auto; */
+  /* display:block; */
   margin-top:15px;
-  align-self: center;
+}
+
+#flowchart img {
+  max-width: 500px;
 }
 
 #phoneNumber {
   position:absolute;
-  bottom: 70px;
+  top: 10px;
   left: 0;
   right: 0;
   width: 100%;
   margin: auto;
   text-align:center;
-  font-size: 45pt;
+  font-size: 35pt;
   color: dimgray;
 }
 
@@ -45,15 +53,15 @@ body {
   right: 15px;
   padding: 0px;
   color: dimgray;
-  font-size: 18pt;
+  font-size: 14pt;
   margin:0;
 }
 
 #cloudLogo {
   position: absolute;
-  left: 15px;
-  right: 0;
-  bottom: 15px;
+  /* left: 15px; */
+  right: 15px;
+  bottom: 40px;
   margin: auto;
   width: 25%;
   margin:0;

@@ -21,11 +21,13 @@ if (!appSettings.eventName) {
 }
 console.log('Event name:', appSettings.eventName);
 
-var wrapper = document.getElementById('wrapper');
+var wrapper = document.getElementById('emojis');
 //var footerHeight = document.getElementById('bannerImg').offsetHeight;
 var footerHeight = 105;
 var maxX = wrapper.offsetWidth;
+// var maxY = document.defaultView.getComputedStyle(wrapper).height;
 var maxY = wrapper.offsetHeight - footerHeight;
+var maxY = wrapper.offsetHeight;
 console.log('maxX', maxX);
 console.log('maxY', maxY);
 
@@ -76,10 +78,19 @@ db.ref('/messages').child(appSettings.eventName).on('child_added', snapshot => {
   }
 });
 
+function getRandomXY() {
+  let minY = -70;
+  let maxY = wrapper.offsetHeight + 200;
+  return {
+    x: Math.floor(Math.random() * (maxX - 50)),
+    y: Math.floor((Math.random() * maxY) + minY)
+  };
+  // return ( { x: Math.floor(Math.random() * (maxX - 50)), y: 0 } );
+}
+
 function placeRandomImage(url) {
   let cssClass = 'emojiMeImage';
-  let x = Math.floor(Math.random() * (maxX - 50));
-  let y = Math.floor(Math.random() * (maxY - 35));
+  let coord = getRandomXY();
 
   var displayItem = document.createElement('div');
   var i = document.createElement("img");
@@ -88,15 +99,14 @@ function placeRandomImage(url) {
   if (cssClass) {
     displayItem.className += ' ' + cssClass;
   }
-  displayItem.style.top = y + 'px';
-  displayItem.style.left = x + 'px';
+  displayItem.style.top = coord.y + 'px';
+  displayItem.style.left = coord.x + 'px';
   displayItem.appendChild(i);
   wrapper.appendChild(displayItem); 
 }
 
 function placeRandomText(text, cssClass) {
-  let x = Math.floor(Math.random() * (maxX - 50));
-  let y = Math.floor(Math.random() * (maxY - 35));
+  let coord = getRandomXY();
 
   var displayItem = document.createElement('div');
   var t = document.createTextNode(text);
@@ -104,8 +114,8 @@ function placeRandomText(text, cssClass) {
   if (cssClass) {
     displayItem.className += ' ' + cssClass;
   }
-  displayItem.style.top = y + 'px';
-  displayItem.style.left = x + 'px';
+  displayItem.style.top = coord.y + 'px';
+  displayItem.style.left = coord.x + 'px';
   displayItem.appendChild(t);
   wrapper.appendChild(displayItem); 
 }
