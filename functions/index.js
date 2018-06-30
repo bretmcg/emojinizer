@@ -45,47 +45,29 @@ exports.resetVisualizer = functions.https.onCall((data, context) => {
     });
 });
 
+function handleImage(twilioBody, msg) {
+  return emojify.emojify(twilioBody)
+    .then((mediaUrl) => {
+      console.log(`mediaUrl: ${mediaUrl}`);
+      let message = `Here's your emoji-me photo. Giddy up!`;
+      if (!mediaUrl) {
+        message = `There was a problem finding faces in your photo.`
+      } else {
+        saveToFirebase({ imageUrl: mediaUrl }, msg.event);
+      }
+      return sendReplyText(msg.userNumber, msg.twilioNumber, message , mediaUrl);
+    })
+    .then(() => {
+      return 'Done';
+    })
+    .catch(e => {
+      throw new Error(e);
+    });
+}
 
-var sms = functions.https.onRequest((req, res) => {
+function handleText(twilioBody, msg) {
   const languageClient = new Language.v1.LanguageServiceClient();
-  console.log('smsWebhook');
-
-  let body = req.body;
-  console.log(body);
-  let msg = {
-    userNumber: body.From,
-    country: body.FromCountry,
-    city: body.FromCity,
-    twilioNumber: body.To,
-    text: filter.clean(body.Body),
-    event: body.event || body.To
-  };
-
-  if (emojify.hasImage(body)) {
-    console.log('Media attached to message, running face emojify.');
-    return emojify.emojify(body)
-      .then((mediaUrl) => {
-        let message = `Here's your emoji-me photo. Giddy up!`;
-        if (!mediaUrl) {
-          message = `There was a problem finding faces in your photo.`
-        } else {
-          saveToFirebase({ imageUrl: mediaUrl }, msg.event);
-        }
-
-        return sendReplyText(msg.userNumber, msg.twilioNumber, message , mediaUrl);
-      })
-      .then(() => {
-        return res.status(200).send('Done');
-      })
-      .catch(e => {
-        console.error(e);
-        return res.status(500).send('An error has occured');
-      });
-  }
-  console.log(`Plain text sms: "${msg.text}" sent from ${msg.userNumber}, ${msg.country},${msg.city}, saving to ${msg.event}`);
-
   // msg.text = "'Lawrence of Arabia' is a highly rated film biography about British Lieutenant T. E. Lawrence. Peter O'Toole plays Lawrence in the film.";
-
   const document = {
     content: msg.text,
     type: 'PLAIN_TEXT'
@@ -118,11 +100,42 @@ var sms = functions.https.onRequest((req, res) => {
     .then(() => saveToFirebase({ emoji: msg.emoji, tokens: msg.tokens }, msg.event))
     .then(() => saveToBigQuery(msg))
     .then(() => {
-      return res.status(200).send('Done');
+      return 'Done';
     })
     .catch(err => {
-      console.log(new Error(err));
-      return res.status(500).send('An error has occured: ' + err);
+      console.log(err);
+      throw new Error(err);
+    });
+}
+
+
+var sms = functions.https.onRequest((req, res) => {
+  console.log('/sms');
+  let body = req.body;
+  console.log(body);
+  let msg = {
+    userNumber: body.From,
+    country: body.FromCountry,
+    city: body.FromCity,
+    twilioNumber: body.To,
+    text: filter.clean(body.Body),
+    event: body.event || body.To
+  };
+
+  return emojify.hasImage(body)
+    .then(hasimg => {
+      if (hasimg) {
+        console.log('Media found in message, running face emojify.');
+        return handleImage(body, msg);
+      } else {
+        console.log(`Plain text sms: "${msg.text}" sent from ${msg.userNumber}, ${msg.country},${msg.city}, saving to ${msg.event}`);
+        return handleText(body, msg);
+      }
+    }).then(responseMessage => {
+      return res.status(200).send(responseMessage);
+    }).catch(err => {
+      console.error(err);
+      return res.status(500).send('An error has occured.');
     });
 }); //end sms
 

@@ -14,9 +14,12 @@
 
 const extName = require('ext-name');
 const path = require('path');
+const getUrls = require('get-urls');
 const fetch = require('node-fetch');
 const fs = require('fs');
+const https = require('https');
 const urlUtil = require('url');
+const uuidv4 = require('uuid/v4');
 
 const helpers = require('./helpers')
 const createImageMagickTransform = require('./decorator')
@@ -134,30 +137,116 @@ const transformApplyEmojify = (file, parameters) =>
         },
     }
 
-const hasImage = (body) => {
-  return body.NumMedia > 0;
+
+const getUrlContentType = (url) => {
+  console.log(`Checking url ${url}`);
+  return new Promise((resolve, reject) => {
+    const request = https.get(url,  res => {
+      const contentType = res.headers['content-type'];
+      console.log(contentType);
+      resolve(contentType);
+    });
+  });
 };
-const emojify = (body) => {
-    if (!hasImage(body))
-      return Promise.reject(new Error('No media attached.'));
 
-    const mediaUrl = body['MediaUrl0'];
-    const contentType = body['MediaContentType0'];
-    const extension = extName.mime(contentType)[0].ext;
-    const mediaSid = path.basename(urlUtil.parse(mediaUrl).pathname);
-    const filename = `${mediaSid}.${extension}`;
+const isImageContentType = (contentType) => {
+  if (contentType.toLowerCase().startsWith('image')) {
+    console.log(`${contentType} is an image type.`);
+    return true;
+  }
+  return false;
+};
 
-    return storage
-      .bucket('emojify-uploads')
-      .upload(mediaUrl, { destination: filename, metadata: { contentType: contentType}})
-    .then(response => {
+function getImageFromAttachment(twilioBody) {
+  return new Promise((resolve) => {
+    let image = {
+      url: twilioBody['MediaUrl0'],
+      contentType: twilioBody['MediaContentType0'],
+    };
+    const extension = extName.mime(image.contentType)[0].ext;
+    const mediaSid = path.basename(urlUtil.parse(image.url).pathname);
+    image.filename = `${mediaSid}.${extension}`;
+    return resolve(image);
+  });
+}
+
+function getImageFromMessage(twilioBody) {
+  let mediaUrl = '';
+  if(hasMediaAttached(twilioBody)) {
+    return getImageFromAttachment(twilioBody);
+  }
+  // Else find what's embedded.
+  return getImageFromBodyText(twilioBody.Body);
+}
+
+const getImageFromBodyText = (str) => {
+  return new Promise((resolve, reject) => {
+    let urls = getUrls(str);
+    if(urls.size === 0) {
+      return resolve();
+    }
+    // Just check the first found URL because I'm lazy.
+    let iterator1 = urls.values();
+    let url = iterator1.next().value;
+    return getUrlContentType(url)
+      .then(contentType => {
+        if (isImageContentType(contentType)) {
+          return resolve({
+            url: url,
+            contentType: contentType,
+            filename: url.split('/').slice(-1)[0]
+          });
+        } else {
+          return resolve();
+        }
+    }).catch(err => {
+      console.error(err);
+      return reject(err);
+    });
+  });
+}
+
+function hasMediaAttached(twilioBody) {
+  return (twilioBody.NumMedia > 0);
+}
+
+function hasImage(twilioBody) {
+  return getImageFromMessage(twilioBody)
+    .then(image => {
+      console.log('image', image);
+      if (!image) {
+        console.log('no-image', image);
+        return false;
+      }
+      return true;
+    });
+}
+
+const emojify = (twilioBody) => {
+  return new Promise((resolve, reject) => {
+    getImageFromMessage(twilioBody)
+      .then(image => {
+        if(!image) {
+          throw new Error('No image found.');
+        }
+        console.log('image found:', JSON.stringify(image));
+        return storage
+          .bucket('emojify-uploads')
+          .upload(image.url, { destination: image.filename, metadata: { contentType: image.contentType}});
+    }).then(response => {
       let gcsFile = response[0];
       console.log(JSON.stringify(gcsFile));
       return transformApplyEmojify(gcsFile, {outputBucketName: 'emojify-faces', outputPrefix: 'emojiface'});
     }).then(gcsFile => {
       // return console.log('obj', JSON.stringify(obj));
-      return `https://storage.googleapis.com/${gcsFile.bucket.name}/${gcsFile.name}`;
+      let publicUrl = `https://storage.googleapis.com/${gcsFile.bucket.name}/${gcsFile.name}`;
+      console.log('publicUrl', publicUrl);
+      return resolve(publicUrl);
+    }).catch(err => {
+      console.error(err);
+      reject(err);
     });
+  });
 };
 
 exports.hasImage = hasImage;

@@ -8,12 +8,14 @@ const appSettings = {
 // If an event wasn't explicitly set in the URL, use the phone number
 // as the event name, in the format +19998887777.
 if (!appSettings.eventName) {
-  // Remove everything except digits and + (for country code);
-  let ph = appSettings.phoneNumber.replace(/[\D\+]/g,'');
+  let ph = appSettings.phoneNumber;
   // If no country code supplied, prepend +1 (assume US).
+  console.log('ph.indexOf("+")', ph.indexOf("+"));
   if (ph.indexOf("+") == -1) {
     ph = "+1" + ph;
   }
+  // Remove everything except digits and + (for country code);
+  ph = ph.replace(/[^\d\+]/g,'');
   console.log(ph);
   appSettings.eventName = ph;
 }
