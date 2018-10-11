@@ -113,13 +113,14 @@ var sms = functions.https.onRequest((req, res) => {
   console.log('/sms');
   let body = req.body;
   console.log(body);
+  console.log(req.query, JSON.stringify(req.query));
   let msg = {
     userNumber: body.From,
     country: body.FromCountry,
     city: body.FromCity,
     twilioNumber: body.To,
     text: filter.clean(body.Body),
-    event: body.event || body.To
+    event: req.query.event || body.To
   };
 
   return emojify.hasImage(body)
